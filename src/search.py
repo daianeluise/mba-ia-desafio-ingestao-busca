@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_postgres import PGVector
 
 PROMPT_TEMPLATE = """
@@ -32,9 +32,7 @@ RESPONDA A "PERGUNTA DO USUÁRIO"
 
 
 def search_prompt(question=None):
-    if question is None or not str(question).strip():
-        raise ValueError("A pergunta não pode ser vazia.")
-
+   
     load_dotenv()
 
     for key in ("DATABASE_URL", "PG_VECTOR_COLLECTION_NAME", "OPENAI_API_KEY", "OPENAI_EMBEDDING_MODEL"):
@@ -52,11 +50,25 @@ def search_prompt(question=None):
           use_jsonb=True,
       ) 
   
-    docs = store.similarity_search(question, k=10)
-    contexto = "\n\n".join(doc.page_content for doc in docs)
+    llm = ChatOpenAI(model=os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"))
 
-    return PROMPT_TEMPLATE.format(
-        contexto=contexto,
-        pergunta=question
-    )
+    if question is not None:
+        if not str(question).strip():
+            raise ValueError("A pergunta não pode ser vazia.")
 
+        docs = store.similarity_search(question, k=10)
+        contexto = "\n\n".join(doc.page_content for doc in docs)
+        return PROMPT_TEMPLATE.format(contexto=contexto, pergunta=question)
+
+    def chain(pergunta):
+        if not pergunta or not str(pergunta).strip():
+            raise ValueError("A pergunta não pode ser vazia.")
+
+        docs = store.similarity_search(pergunta, k=10)
+        contexto = "\n\n".join(doc.page_content for doc in docs)
+        prompt = PROMPT_TEMPLATE.format(contexto=contexto, pergunta=pergunta)
+
+        resposta = llm.invoke(prompt)
+        return resposta.content
+
+    return chain
